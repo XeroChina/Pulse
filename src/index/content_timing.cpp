@@ -1,4 +1,5 @@
 #include "content_timing.h"
+#include "../common/portable_paths.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -136,9 +137,13 @@ void PruneForeignLogs(const std::filesystem::path& directory) noexcept {
 std::wstring LogPath() {
     auto directory = Environment(L"PULSE_CONTENT_TIMING_DIR");
     if (directory.empty()) {
-        directory = Environment(L"LOCALAPPDATA");
-        if (directory.empty()) return {};
-        directory += L"\\Pulse\\logs";
+        if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+            directory = portable + L"\\logs";
+        } else {
+            directory = Environment(L"LOCALAPPDATA");
+            if (directory.empty()) return {};
+            directory += L"\\Pulse\\logs";
+        }
     }
     std::error_code error;
     std::filesystem::create_directories(directory, error);

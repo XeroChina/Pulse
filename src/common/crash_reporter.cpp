@@ -1,4 +1,5 @@
 #include "crash_reporter.h"
+#include "portable_paths.h"
 #include "runtime_log.h"
 #include "pulse_version.h"
 
@@ -104,6 +105,10 @@ bool EnsureDirectory(const std::wstring& path) noexcept {
 }
 
 std::wstring DefaultDataRoot(bool machine_scope) {
+    if (!machine_scope) {
+        if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+            return portable;
+    }
     wchar_t path[MAX_PATH]{};
     const int csidl = machine_scope ? CSIDL_COMMON_APPDATA : CSIDL_LOCAL_APPDATA;
     if (FAILED(SHGetFolderPathW(nullptr, csidl, nullptr, SHGFP_TYPE_CURRENT, path))) return {};

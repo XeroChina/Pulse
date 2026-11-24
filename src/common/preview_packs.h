@@ -14,6 +14,7 @@
 // Header-only on purpose: the preview host, the app and the tests are
 // separate executables and must not gain link dependencies.
 #pragma once
+#include "portable_paths.h"
 
 #include "json_utils.h"
 #include "utf8_file.h"
@@ -50,9 +51,11 @@ inline const wchar_t* PackMainTool(PackId id) {
     return L"";
 }
 
-// %LOCALAPPDATA%\Pulse\packs, empty when the variable is unavailable. Tests and
-// --test-instance runs redirect LOCALAPPDATA, which isolates packs as well.
+// %LOCALAPPDATA%\Pulse\packs (or <PortableRoot>\Data\packs in portable mode).
+// Tests and --test-instance runs redirect LOCALAPPDATA, which isolates packs as well.
 inline std::wstring PacksRoot() {
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+        return portable + L"\\packs";
     wchar_t root[32768];
     const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", root, static_cast<DWORD>(std::size(root)));
     if (!count || count >= std::size(root)) return {};

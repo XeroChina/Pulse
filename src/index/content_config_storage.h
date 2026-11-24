@@ -1,16 +1,20 @@
 #pragma once
 #include "content_search_protocol.h"
 #include "../common/current_user_security.h"
+#include "../common/portable_paths.h"
 #include <algorithm>
 #include <cwctype>
 
 namespace pulse::index::config_storage {
 inline bool SameStoredPath(const std::wstring& a, const std::wstring& b) { return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_EQUAL; }
 inline std::wstring DatabasePath() {
-    wchar_t base[32768]{};
-    const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", base, ARRAYSIZE(base));
-    if (!n || n >= ARRAYSIZE(base)) return {};
-    std::wstring dir = std::wstring(base) + L"\\Pulse";
+    std::wstring dir = pulse::portable_paths::PortableDataDir();
+    if (dir.empty()) {
+        wchar_t base[32768]{};
+        const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", base, ARRAYSIZE(base));
+        if (!n || n >= ARRAYSIZE(base)) return {};
+        dir = std::wstring(base) + L"\\Pulse";
+    }
     CurrentUserSecurityAttributes security;
     CreateDirectoryW(dir.c_str(), security ? security.get() : nullptr);
     dir += L"\\ContentIndex";

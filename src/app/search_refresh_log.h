@@ -1,4 +1,5 @@
 #pragma once
+#include "../common/portable_paths.h"
 #include "app_navigation.h"
 #include <condition_variable>
 #include <cstdio>
@@ -60,8 +61,12 @@ private:
         try {
             auto directory = Environment(dir_env_.c_str());
             if (directory.empty()) {
-                directory = Environment(L"LOCALAPPDATA");
-                if (!directory.empty()) directory += L"\\Pulse\\logs";
+                if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+                    directory = portable + L"\\logs";
+                } else {
+                    directory = Environment(L"LOCALAPPDATA");
+                    if (!directory.empty()) directory += L"\\Pulse\\logs";
+                }
             }
             if (!directory.empty()) {
                 std::error_code error;

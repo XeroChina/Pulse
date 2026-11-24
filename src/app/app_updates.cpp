@@ -35,18 +35,6 @@ void LaunchReadyUpdate(AppState& state) {
     }
 }
 
-// Preview packs follow the update check (自动检查更新, and packs.json
-// auto_update - Settings > 自动更新预览增强包): when this build's catalog
-// has a newer release of an installed pack, it is downloaded in the
-// background. Screenshot runs and test instances keep their packs unless
-// PULSE_TEST_PACK_AUTO_UPDATE is set.
-void TickPackUpdates(AppState& state, unsigned long long now) {
-    if (now < state.core.next_pack_update_check || state.shot.active || !app::UpdateChecker::Enabled() ||
-        !state.appPrefs.auto_check_updates || state.update_installer.Progress().active()) return;
-    if (state.isolatedTest && !GetEnvironmentVariableW(L"PULSE_TEST_PACK_AUTO_UPDATE", nullptr, 0)) return;
-    state.core.next_pack_update_check = now + kCheckInterval;
-    state.settings.AutoUpdatePacks(state.hwnd);
-}
 }
 
 void CheckForUpdates(AppState& state) {
@@ -112,12 +100,7 @@ void TickUpdates(AppState& state, unsigned long long now) {
     // 备份与迁移: what this start applied, once the window shows.
     if (!state.shot.active && IsWindowVisible(state.hwnd) && !IsIconic(state.hwnd))
         ShowSettingsTransferStartupToast(state);
-    TickPackUpdates(state, now);
-    if (state.shot.active || !app::UpdateChecker::Enabled() || !state.appPrefs.auto_check_updates ||
-        now < state.next_update_check) return;
-    if (state.update_installer.Progress().active() || state.update_checker.checking()) return;
-    state.next_update_check = now + kCheckInterval;
-    CheckForUpdates(state);
+    // Automatic update checks are disabled in this custom portable build.
 }
 
 void NoteRunningVersion(AppState& state) {

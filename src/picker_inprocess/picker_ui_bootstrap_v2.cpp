@@ -1,4 +1,5 @@
 #include "../common/runtime_log.h"
+#include "../common/portable_paths.h"
 #include <shlobj.h>
 #include <mutex>
 #include "../common/picker_user_storage.h"
@@ -35,10 +36,16 @@ void LogOwnerContext(const pulse::PickerOwnerGuard& guard, HWND owner) noexcept 
     try {
         static std::once_flag once;
         std::call_once(once, [] {
-            PWSTR root = nullptr;
-            if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &root))) {
-                pulse::diagnostics::runtime::Initialize(std::wstring(root) + L"\\Pulse", "picker_ui");
-                CoTaskMemFree(root);
+            std::wstring log_root = pulse::portable_paths::PortableDataDir();
+            if (log_root.empty()) {
+                PWSTR root = nullptr;
+                if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &root))) {
+                    log_root = std::wstring(root) + L"\\Pulse";
+                    CoTaskMemFree(root);
+                }
+            }
+            if (!log_root.empty()) {
+                pulse::diagnostics::runtime::Initialize(log_root, "picker_ui");
             }
         });
         DWORD pid = 0;

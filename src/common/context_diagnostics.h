@@ -1,4 +1,5 @@
 #pragma once
+#include "portable_paths.h"
 #include <windows.h>
 #include <string>
 #include <string_view>
@@ -51,10 +52,13 @@ public:
     ~Batch() noexcept {
         try {
         if (!enabled_ || data_.empty()) return;
-        wchar_t local[32768]{};
-        const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, 32768);
-        if (!n || n >= 32768) return;
-        std::wstring path = std::wstring(local) + L"\\Pulse";
+        std::wstring path = pulse::portable_paths::PortableDataDir();
+        if (path.empty()) {
+            wchar_t local[32768]{};
+            const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, 32768);
+            if (!n || n >= 32768) return;
+            path = std::wstring(local) + L"\\Pulse";
+        }
         CreateDirectoryW(path.c_str(), nullptr);
         path += L"\\pulse_context_ui.log";
         WIN32_FILE_ATTRIBUTE_DATA attr{};

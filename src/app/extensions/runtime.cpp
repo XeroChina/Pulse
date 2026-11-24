@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "../../common/portable_paths.h"
 #include "developer_cli.h"
 #include "audit_diagnostics_cli.h"
 #include "development_reload.h"
@@ -103,14 +104,21 @@ void RecordDefaultStoreStatus(const std::filesystem::path& store, const std::str
     }
 }
 void StartAudit(bool isolated) {
-    wchar_t base[32768]{};
-    const DWORD length = GetEnvironmentVariableW(isolated ? L"PULSE_TEST_DATA_DIR" : L"LOCALAPPDATA", base, 32768);
-    if (!length || length >= 32768) {
-        SetPersistentExtensionAuditStartupFailure(true);
-        return;
+    std::filesystem::path root;
+    if (!isolated) {
+        if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+            root = std::filesystem::path(portable) / L"extension-audit";
     }
-    const auto root = std::filesystem::path(base) /
-        (isolated ? std::filesystem::path(L"extension-audit") : std::filesystem::path(L"Pulse") / L"extension-audit");
+    if (root.empty()) {
+        wchar_t base[32768]{};
+        const DWORD length = GetEnvironmentVariableW(isolated ? L"PULSE_TEST_DATA_DIR" : L"LOCALAPPDATA", base, 32768);
+        if (!length || length >= 32768) {
+            SetPersistentExtensionAuditStartupFailure(true);
+            return;
+        }
+        root = std::filesystem::path(base) /
+            (isolated ? std::filesystem::path(L"extension-audit") : std::filesystem::path(L"Pulse") / L"extension-audit");
+    }
     try { StartPersistentExtensionAudit(root.wstring()); }
     catch (...) { SetPersistentExtensionAuditStartupFailure(false); }
 }
@@ -225,11 +233,18 @@ StartupResult PrepareStartup(int argc, wchar_t** argv) {
     }
     std::wstring discovered_store;
     if (!manifest_path) {
-        wchar_t base[32768]{};
-        const DWORD length = GetEnvironmentVariableW(isolated ? L"PULSE_TEST_DATA_DIR" : L"LOCALAPPDATA", base, 32768);
-        if (!length || length >= 32768) return {};
-        const auto root = std::filesystem::path(base) /
-            (isolated ? std::filesystem::path(L"extensions") : std::filesystem::path(L"Pulse") / L"extensions");
+        std::filesystem::path root;
+        if (!isolated) {
+            if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+                root = std::filesystem::path(portable) / L"extensions";
+        }
+        if (root.empty()) {
+            wchar_t base[32768]{};
+            const DWORD length = GetEnvironmentVariableW(isolated ? L"PULSE_TEST_DATA_DIR" : L"LOCALAPPDATA", base, 32768);
+            if (!length || length >= 32768) return {};
+            root = std::filesystem::path(base) /
+                (isolated ? std::filesystem::path(L"extensions") : std::filesystem::path(L"Pulse") / L"extensions");
+        }
         if (!root.is_absolute()) return {};
         std::error_code error;
         if (!std::filesystem::exists(root / L"registry.json", error)) return {};

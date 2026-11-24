@@ -1,4 +1,5 @@
 #include "crash_guard.h"
+#include "../../../common/portable_paths.h"
 #include "../runtime.h"
 #include "../../../common/crash_reporter.h"
 #include <psapi.h>
@@ -137,11 +138,18 @@ std::vector<std::wstring> ApplyAtStartup(bool isolated) {
     // Development hosts reload the author's build on every save; disabling it
     // after a crash would only get in the way of fixing it.
     if (DevelopmentMode() || PackageCount() == 0) return newly_disabled;
-    wchar_t base[32768]{};
-    const DWORD length = GetEnvironmentVariableW(isolated ? L"PULSE_TEST_DATA_DIR" : L"LOCALAPPDATA", base, 32768);
-    if (!length || length >= 32768) return newly_disabled;
-    std::wstring root(base, length);
-    root += isolated ? L"\\extensions" : L"\\Pulse\\extensions";
+    std::wstring root;
+    if (!isolated) {
+        if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+            root = portable + L"\\extensions";
+    }
+    if (root.empty()) {
+        wchar_t base[32768]{};
+        const DWORD length = GetEnvironmentVariableW(isolated ? L"PULSE_TEST_DATA_DIR" : L"LOCALAPPDATA", base, 32768);
+        if (!length || length >= 32768) return newly_disabled;
+        root.assign(base, length);
+        root += isolated ? L"\\extensions" : L"\\Pulse\\extensions";
+    }
     const DWORD attributes = GetFileAttributesW(root.c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES || !(attributes & FILE_ATTRIBUTE_DIRECTORY)) return newly_disabled;
     const std::wstring crashed = root + L"\\native-crashed.txt";

@@ -1,4 +1,5 @@
 ﻿#include "system_ctx_model.h"
+#include "../common/portable_paths.h"
 #include "system_ctx_packaged.h"
 
 #include "../common/localization.h"
@@ -521,10 +522,14 @@ SystemCtxModel::SystemCtxModel() {
     }
     sub_index_.assign(nav_.size(), 0);
 
-    PWSTR local = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)) && local)
-        data_dir_ = std::wstring(local) + L"\\Pulse\\SystemContextMenu";
-    CoTaskMemFree(local);
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+        data_dir_ = portable + L"\\SystemContextMenu";
+    } else {
+        PWSTR local = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)) && local)
+            data_dir_ = std::wstring(local) + L"\\Pulse\\SystemContextMenu";
+        CoTaskMemFree(local);
+    }
 }
 
 SystemCtxModel::~SystemCtxModel() {

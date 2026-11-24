@@ -37,12 +37,23 @@ bool IsGuid(const fs::path& path) {
     const auto name=path.filename().wstring(); GUID id{};
     return name.size()==38 && SUCCEEDED(CLSIDFromString(name.c_str(),&id));
 }
+bool IsLinkReparsePoint(const fs::path& path) {
+    if (path == path.root_path()) return false;
+    std::wstring query = path.wstring();
+    while (query.size() > 3 && (query.back() == L'\\' || query.back() == L'/')) query.pop_back();
+    WIN32_FIND_DATAW data{};
+    HANDLE find = FindFirstFileW(query.c_str(), &data);
+    if (find == INVALID_HANDLE_VALUE) return false;
+    FindClose(find);
+    if (!(data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) return false;
+    return data.dwReserved0 == IO_REPARSE_TAG_SYMLINK || data.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT;
+}
 DWORD NoReparse(const fs::path& path) {
     if(!path.is_absolute()) return ERROR_BAD_PATHNAME;
     for(auto p=path; !p.empty(); p=p.parent_path()) {
         const DWORD attributes=GetFileAttributesW(p.c_str());
         if(attributes==INVALID_FILE_ATTRIBUTES) return GetLastError();
-        if(attributes&FILE_ATTRIBUTE_REPARSE_POINT) return ERROR_REPARSE_TAG_INVALID;
+        if((attributes&FILE_ATTRIBUTE_REPARSE_POINT) && IsLinkReparsePoint(p)) return ERROR_REPARSE_TAG_INVALID;
         if(p==p.parent_path()) break;
     }
     return ERROR_SUCCESS;
@@ -123,6 +134,20 @@ struct DialogManagementController::State {
         const auto requested=requested_root.empty()?GetPulseDataDir()+L"\\DialogManagement":requested_root;
         fs::path path(requested);if(!path.is_absolute()) return ERROR_BAD_PATHNAME;
         auto ancestor=path;while(!fs::exists(ancestor) && ancestor!=ancestor.parent_path()) ancestor=ancestor.parent_path();
+        if(requested_root.empty()) {
+            // Resolve any OS/user junction on parent folders above Pulse's own data root
+            // (e.g. redirected AppData\Local or portable drive mount) to its physical path.
+            const auto canonical_ancestor=Plain(dialog_session::Canonical(ancestor,true));
+            if(!canonical_ancestor.empty()) {
+                const auto suffix=path.lexically_relative(ancestor);
+                if(!suffix.empty() && suffix!=L".") {
+                    path=fs::path(canonical_ancestor)/suffix;
+                    ancestor=fs::path(canonical_ancestor);
+                } else if(path==ancestor) {
+                    path=ancestor=fs::path(canonical_ancestor);
+                }
+            }
+        }
         if(const DWORD error=NoReparse(ancestor)) return error;
         std::error_code ec;fs::create_directories(path,ec);if(ec) return static_cast<DWORD>(ec.value());
         if(const DWORD error=NoReparse(path)) return error;
@@ -133,6 +158,8 @@ struct DialogManagementController::State {
         if(!requested_root.empty()) {const DWORD error=ReadConfiguration(root/L"configuration.bin",configuration);if(error) return error;}
         install_root=app_runtime_paths::InstallRoot();
         if(install_root.empty()) return ERROR_BAD_PATHNAME;
+        if(const auto canonical_install=Plain(dialog_session::Canonical(install_root,true)); !canonical_install.empty())
+            install_root=canonical_install;
         installed_default=configuration.bundle_root.empty() ||
             _wcsicmp(configuration.bundle_root.c_str(),install_root.c_str())==0 ||
             _wcsicmp(configuration.bundle_root.c_str(),(install_root/L"DialogBridge").c_str())==0;

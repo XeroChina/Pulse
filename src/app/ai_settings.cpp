@@ -1,4 +1,5 @@
 #include "ai_settings.h"
+#include "../common/portable_paths.h"
 #include "../common/json_value.h"
 #include "../common/utf8_file.h"
 #include <windows.h>
@@ -91,6 +92,8 @@ bool SameText(std::wstring_view a, std::wstring_view b) {
 } // namespace
 
 std::wstring AiDirectory() {
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+        return portable + L"\\ai";
     const std::wstring root = LocalAppData();
     return root.empty() ? std::wstring{} : root + L"\\Pulse\\ai";
 }

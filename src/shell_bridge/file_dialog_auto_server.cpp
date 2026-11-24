@@ -7,6 +7,7 @@
 #include "../common/dialog_auto_registration.h"
 #include "../common/runtime_log.h"
 #include "../common/dialog_admin_trust.h"
+#include "../common/portable_paths.h"
 #include <atomic>
 #include <shlobj.h>
 #include <mutex>
@@ -105,9 +106,16 @@ void Initialize() {
         HMODULE pinned = nullptr;
         if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
             reinterpret_cast<LPCWSTR>(&module), &pinned)) throw HRESULT_FROM_WIN32(GetLastError());
-        PWSTR root = nullptr;
-        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &root))) {
-            log::Initialize(std::wstring(root) + L"\\Pulse", "dialog_auto");
+        std::wstring log_root = pulse::portable_paths::PortableDataDirForModule(module);
+        if (log_root.empty()) {
+            PWSTR root = nullptr;
+            if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &root))) {
+                log_root = std::wstring(root) + L"\\Pulse";
+                CoTaskMemFree(root);
+            }
+        }
+        if (!log_root.empty()) {
+            log::Initialize(log_root, "dialog_auto");
             wchar_t executable[32768]{};
             GetModuleFileNameW(nullptr, executable, 32768);
             const wchar_t* base = wcsrchr(executable, L'\\');
@@ -119,7 +127,6 @@ void Initialize() {
             log::Event("dialog_identity", {{"app", app}, {"diagnostics_revision", 47}});
             LogModule("loaded_bridge", module);
             LogModule("caller_process", GetModuleHandleW(nullptr));
-            CoTaskMemFree(root);
         }
     });
 }

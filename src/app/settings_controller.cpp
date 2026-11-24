@@ -2,6 +2,7 @@
 #include "../common/windows_compat.h"
 #include "../common/localization.h"
 #include "settings_controller.h"
+#include "../common/portable_paths.h"
 #include "blank_pane_click.h"
 #include "default_file_manager.h"
 #include "shell_integration_registry.h"
@@ -68,10 +69,13 @@ std::wstring IntegrationFailureText(const ShellIntegrationFailure& failure) {
 }
 
 std::wstring IntegrationLogPath() {
-    wchar_t base[MAX_PATH]{};
-    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", base, MAX_PATH);
-    if (!length || length >= MAX_PATH) return {};
-    std::wstring dir = std::wstring(base) + L"\\Pulse";
+    std::wstring dir = pulse::portable_paths::PortableDataDir();
+    if (dir.empty()) {
+        wchar_t base[MAX_PATH]{};
+        const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", base, MAX_PATH);
+        if (!length || length >= MAX_PATH) return {};
+        dir = std::wstring(base) + L"\\Pulse";
+    }
     CreateDirectoryW(dir.c_str(), nullptr);
     dir += L"\\logs";
     CreateDirectoryW(dir.c_str(), nullptr);

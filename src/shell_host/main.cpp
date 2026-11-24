@@ -24,6 +24,7 @@
 #include "../common/shell_id.h"
 #include "../common/recycle_index.h"
 #include "../common/crash_reporter.h"
+#include "../common/portable_paths.h"
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -93,12 +94,15 @@ struct HostState {
 constexpr LONGLONG kHostLogMaxBytes = 1024 * 1024;
 const std::wstring& HostLogPath() {
     static const std::wstring path = [] {
-        wchar_t dir[32768]{};
-        const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", dir, ARRAYSIZE(dir));
-        if ((!n || n >= ARRAYSIZE(dir)) &&
-            FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, dir)))
-            return std::wstring();
-        std::wstring p = std::wstring(dir) + L"\\Pulse";
+        std::wstring p = pulse::portable_paths::PortableDataDir();
+        if (p.empty()) {
+            wchar_t dir[32768]{};
+            const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", dir, ARRAYSIZE(dir));
+            if ((!n || n >= ARRAYSIZE(dir)) &&
+                FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, dir)))
+                return std::wstring();
+            p = std::wstring(dir) + L"\\Pulse";
+        }
         CreateDirectoryW(p.c_str(), nullptr);
         return p + L"\\pulse_shell_host.log";
     }();

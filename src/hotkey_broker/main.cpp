@@ -2,6 +2,7 @@
 #include "../ipc/elevated_transfer_transport.h"
 #include "../app/win_e_input.h"
 #include "../common/runtime_log.h"
+#include "../common/portable_paths.h"
 #include <shellapi.h>
 #include <shlobj.h>
 #include <exdisp.h>
@@ -216,9 +217,16 @@ int Run(DWORD parent_id, const protocol::Nonce& nonce) {
         (L"native-" + std::to_wstring(parent_id))).wstring(), "hotkey_broker");
     if (!pulse::win_e_broker_test::Prepare(parent_id)) { log::Shutdown(); return 6; }
 #else
-    PWSTR local = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) {
-        log::Initialize(std::wstring(local) + L"\\Pulse", "hotkey_broker"); CoTaskMemFree(local);
+    std::wstring log_root = pulse::portable_paths::PortableDataDir();
+    if (log_root.empty()) {
+        PWSTR local = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) {
+            log_root = std::wstring(local) + L"\\Pulse";
+            CoTaskMemFree(local);
+        }
+    }
+    if (!log_root.empty()) {
+        log::Initialize(log_root, "hotkey_broker");
     }
 #endif
     Broker broker; broker.shared = shared; broker.parent = parent.Get(); current = &broker;

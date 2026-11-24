@@ -1,4 +1,5 @@
 #include "picker_appearance.h"
+#include "../common/portable_paths.h"
 #include "app_prefs.h"
 #include "blank_pane_click.h"
 #include "../ui/folder_picker_dialog.h"
@@ -141,6 +142,8 @@ PickerAppearanceReadResult ReadPickerAppearanceFileReadOnly(const std::wstring& 
 }
 PickerAppearanceReadResult ReadUserPickerAppearanceReadOnly() noexcept {
     try {
+        if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+            return ReadPickerAppearanceFileReadOnly(portable + L"\\app.json");
         CoMemory directory;
         const HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY, nullptr, &directory.value);
         if (FAILED(hr)) return Failure(HRESULT_FACILITY(hr) == FACILITY_WIN32 ? HRESULT_CODE(hr) : ERROR_GEN_FAILURE);

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include "file_click_controller.h"
 #include "../common/app_runtime_paths.h"
+#include "../common/portable_paths.h"
 #include "../common/app_identity.h"
 namespace pulse::app { bool RunMediaColumnResizeCapture(); }
 #include "../ui/edit_host.h"
@@ -4439,6 +4440,7 @@ int RunQuickPreviewFramePerf();
 #endif
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
+    pulse::portable_paths::ExportPortableEnvironment();
     pulse::app_identity::SetProcess();
     // Isolated lifecycle regression: no main window, extensions or services.
     if (__argc == 2 && wcscmp(__wargv[1], L"--test-instance") == 0 &&

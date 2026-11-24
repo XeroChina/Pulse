@@ -1,4 +1,5 @@
 #include "extension_store_ui.h"
+#include "../common/portable_paths.h"
 #include "extension_store_review.h"
 #include "extension_store_management_ui.h"
 #include "app_state.h"
@@ -63,9 +64,13 @@ public:
     explicit ExtensionStoreController(bool persist) {
         root = extensions::PackageStoreRoot();
         if (root.empty() && persist && extensions::PackageCount() == 0) {
-            wchar_t base[32768]{};
-            const auto count = GetEnvironmentVariableW(L"LOCALAPPDATA", base, 32768);
-            if (count && count < 32768) root = std::filesystem::path(base) / L"Pulse" / L"extensions";
+            if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+                root = std::filesystem::path(portable) / L"extensions";
+            } else {
+                wchar_t base[32768]{};
+                const auto count = GetEnvironmentVariableW(L"LOCALAPPDATA", base, 32768);
+                if (count && count < 32768) root = std::filesystem::path(base) / L"Pulse" / L"extensions";
+            }
         }
         if (!root.empty() && !root.is_absolute()) root.clear();
         if (!root.empty()) {

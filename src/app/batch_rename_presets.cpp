@@ -1,5 +1,6 @@
 // batch_rename_presets.cpp - see batch_rename_presets.h.
 #include "batch_rename_presets.h"
+#include "../common/portable_paths.h"
 
 #include "../common/json_value.h"
 
@@ -124,6 +125,8 @@ bool PresetFromJson(const Value& o, Preset& p) {
 }
 
 std::wstring StorePath() {
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+        return portable + L"\\rename_presets.json";
     wchar_t root[MAX_PATH] = {};
     const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", root, static_cast<DWORD>(std::size(root)));
     if (n == 0 || n >= std::size(root)) return {};

@@ -1,5 +1,6 @@
 // session.cpp
 #include "session.h"
+#include "../common/portable_paths.h"
 #include "hot_entry_data_dir.h"
 #include "split_tree_shape.h"
 #include "../common/config_json.h"
@@ -381,6 +382,9 @@ std::wstring GetPulseDataDir() {
         return test_dir;
     }
 #endif
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+        return portable;
+    }
     wchar_t path[MAX_PATH] = {};
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, path))) {
         std::wstring dir = std::wstring(path) + L"\\Pulse";

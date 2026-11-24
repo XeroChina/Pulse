@@ -1,4 +1,5 @@
 #include "index_config.h"
+#include "../common/portable_paths.h"
 #include "../fs/drive_kind.h"
 #include "index_directory_security.h"
 #include "../common/config_json.h"
@@ -288,6 +289,10 @@ bool ProtectIndexDirectory(const std::wstring& path) {
 }
 
 std::wstring UserIndexRoot() {
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+        if (!EnsureDirectory(portable)) return {};
+        return portable;
+    }
     std::wstring root = KnownFolder(CSIDL_LOCAL_APPDATA);
     if (root.empty()) return {};
     const std::wstring pulse = root + L"\\Pulse";

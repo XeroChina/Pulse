@@ -1,4 +1,5 @@
 #include "document_reader.h"
+#include "../common/portable_paths.h"
 #include "document_protocol.h"
 #include "document_admission.h"
 #include "../common/runtime_log.h"
@@ -52,6 +53,14 @@ bool AdmissionDirectory(std::wstring& directory, DWORD& error) {
             error = ERROR_PATH_NOT_FOUND; return false;
         }
         directory = isolated;
+        return true;
+    }
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+        resolved = portable + L"\\document-slots-v1";
+        if (!CreateDirectoryW(resolved.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
+            error = GetLastError(); return false;
+        }
+        directory = std::move(resolved);
         return true;
     }
     PWSTR local = nullptr;

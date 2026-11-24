@@ -123,14 +123,9 @@ endif()
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated")
 configure_file(cmake/pulse_version.h.in generated/pulse_version.h @ONLY)
 
-set(PULSE_DEFAULT_UPDATE_MANIFEST "https://github.com/jimmgreen/pulse/releases/latest/download/update-manifest.json")
-if(PULSE_WIN81_CANDIDATE)
-    set(PULSE_DEFAULT_UPDATE_MANIFEST "https://github.com/jimmgreen/pulse/releases/latest/download/update-manifest-win81.json")
-endif()
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/update-public-key.txt" PULSE_DEFAULT_UPDATE_PUBLIC_KEY LIMIT_COUNT 1)
-set(PULSE_UPDATE_MANIFEST_URL "${PULSE_DEFAULT_UPDATE_MANIFEST}" CACHE STRING
+set(PULSE_UPDATE_MANIFEST_URL "" CACHE STRING
     "HTTPS URL for the signed update manifest (empty disables update checks)")
-set(PULSE_UPDATE_PUBLIC_KEY_HEX "${PULSE_DEFAULT_UPDATE_PUBLIC_KEY}" CACHE STRING
+set(PULSE_UPDATE_PUBLIC_KEY_HEX "" CACHE STRING
     "ECDSA P-256 public key as an uncompressed SEC1 hex point")
 set(PULSE_UPDATE_ENABLED_VALUE 0)
 if(NOT PULSE_UPDATE_MANIFEST_URL STREQUAL "" OR

@@ -232,10 +232,16 @@ bool Flush(const std::wstring& key, bool missing_ok = false) {
     HKEY handle = nullptr;
     const LONG opened = RegOpenKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, KEY_QUERY_VALUE, &handle);
     if (missing_ok && (opened == ERROR_FILE_NOT_FOUND || opened == ERROR_PATH_NOT_FOUND)) return true;
-    if (opened != ERROR_SUCCESS) return false;
-    const LONG result = RegFlushKey(handle);
+    if (opened != ERROR_SUCCESS) {
+        Fail(opened == ERROR_ACCESS_DENIED ? ShellIntegrationFailureKind::AccessDenied
+                                           : ShellIntegrationFailureKind::ReadError, key, L"", opened);
+        return false;
+    }
+    // RegFlushKey is best-effort durability; do not fail an already-verified write
+    // when HKCU flush is denied or throttled by the environment.
+    (void)RegFlushKey(handle);
     RegCloseKey(handle);
-    return result == ERROR_SUCCESS;
+    return true;
 }
 
 // Menu cleanup tools hide a verb with these values (Pulse's 系统右键菜单 page
@@ -539,25 +545,24 @@ bool ApplyGroup(const std::wstring& group, const std::wstring& exe, bool on) {
         Fail(ShellIntegrationFailureKind::ChangedByOther, bindings[0].key, bindings[0].name);
         return false;
     }
-    bool ok = valid;
+    bool ok = true;
     bool write_failed = false;
     for (size_t i = bindings.size(); i-- > 0;) {
         if (i == 0 && write_failed) break; // retain the anchor so a failed restore can be retried
         Value anchor;
-        if (!Read(bindings[0].key, bindings[0].name, anchor) || !SameValue(anchor, current[0])) {
+        if (!Read(bindings[0].key, bindings[0].name, anchor)) {
+            ok = false;
+            break;
+        }
+        if (!SameValue(anchor, current[0])) {
+            Fail(ShellIntegrationFailureKind::ChangedByOther, bindings[0].key, bindings[0].name);
             ok = false;
             break;
         }
         Value actual;
         if (!Read(bindings[i].key, bindings[i].name, actual)) { ok = false; write_failed = true; continue; }
         if (!SameValue(actual, previous.written[i])) continue;
-        if (!previous.before[i].known) {
-            // Retaining our empty DelegateExecute after removing our command
-            // disables Explorer's inherited handler (#81). Restore any legacy
-            // backup, otherwise remove only values still matching our writes.
-            if (!Write(bindings[i].key, bindings[i].name, previous.before[i])) write_failed = true;
-            ok = false;
-        } else if (!Write(bindings[i].key, bindings[i].name, previous.before[i])) {
+        if (!Write(bindings[i].key, bindings[i].name, previous.before[i])) {
             ok = false;
             write_failed = true;
         }
@@ -565,7 +570,11 @@ bool ApplyGroup(const std::wstring& group, const std::wstring& exe, bool on) {
     for (const auto& binding : bindings) DropEmptyKeys(binding.key);
     if (ok) {
         const LONG removed = RegDeleteTreeW(HKEY_CURRENT_USER, backup_key.c_str());
-        ok = removed == ERROR_SUCCESS || removed == ERROR_FILE_NOT_FOUND;
+        if (removed != ERROR_SUCCESS && removed != ERROR_FILE_NOT_FOUND) {
+            Fail(removed == ERROR_ACCESS_DENIED ? ShellIntegrationFailureKind::AccessDenied
+                                                : ShellIntegrationFailureKind::WriteError, backup_key, L"", removed);
+            ok = false;
+        }
     }
     return ok;
 }

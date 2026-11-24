@@ -1,6 +1,7 @@
 #include "picker_proof_trace.h"
 // ui_compositor.cpp
 #include "ui_compositor.h"
+#include "../common/portable_paths.h"
 #include "../common/windows_compat.h"
 #include "../common/localization.h"
 #include "lumatext_renderer.h"
@@ -110,10 +111,15 @@ bool Compositor::CheckGraphics(HRESULT hr, const wchar_t* stage) {
     wchar_t message[256]{};
     swprintf_s(message, L"%s failed (HRESULT 0x%08X)", stage, static_cast<unsigned>(hr));
     initialization_error_ = message;
-    PWSTR local = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) {
-        const std::wstring directory = std::wstring(local) + L"\\Pulse";
-        CoTaskMemFree(local);
+    std::wstring directory = pulse::portable_paths::PortableDataDir();
+    if (directory.empty()) {
+        PWSTR local = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) {
+            directory = std::wstring(local) + L"\\Pulse";
+            CoTaskMemFree(local);
+        }
+    }
+    if (!directory.empty()) {
         CreateDirectoryW(directory.c_str(), nullptr);
         FILE* log = nullptr;
         if (_wfopen_s(&log, (directory + L"\\pulse_graphics.log").c_str(), L"a, ccs=UTF-8") == 0) {

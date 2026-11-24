@@ -1,4 +1,5 @@
 #include "content_instant_session.h"
+#include "../common/portable_paths.h"
 #include "content_scope.h"
 #include "document_reader.h"
 #include "index_feed.h"
@@ -44,7 +45,9 @@ void LogSubscriptionFailure(const Changes& state, uint64_t generation, size_t pe
         DWORD count = GetEnvironmentVariableW(L"PULSE_CONTENT_TIMING_DIR", directory, ARRAYSIZE(directory));
         std::filesystem::path root;
         if (count && count < ARRAYSIZE(directory)) root = directory;
-        else {
+        else if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+            root = std::filesystem::path(portable) / L"logs";
+        } else {
             count = GetEnvironmentVariableW(L"LOCALAPPDATA", directory, ARRAYSIZE(directory));
             if (!count || count >= ARRAYSIZE(directory)) return;
             root = std::filesystem::path(directory) / L"Pulse" / L"logs";

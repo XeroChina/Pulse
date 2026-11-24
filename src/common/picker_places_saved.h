@@ -1,4 +1,5 @@
 #pragma once
+#include "portable_paths.h"
 #include "picker_places_snapshot.h"
 #include "json_utils.h"
 #include "utf8_file.h"
@@ -59,9 +60,14 @@ inline Snapshot ParseSaved(const std::wstring& text) {
 inline Snapshot ReadSaved(const std::wstring& file = {}) {
     std::wstring path = file;
     if (path.empty()) {
-        wchar_t local[MAX_PATH]{};
-        if (FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, local))) return {};
-        path = std::wstring(local) + L"\\Pulse\\places.json";
+        const auto portable = pulse::portable_paths::PortableDataDir();
+        if (!portable.empty()) {
+            path = portable + L"\\places.json";
+        } else {
+            wchar_t local[MAX_PATH]{};
+            if (FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, local))) return {};
+            path = std::wstring(local) + L"\\Pulse\\places.json";
+        }
     }
     std::wstring text;
     return ReadUtf8File(path, text) ? ParseSaved(text) : Snapshot{};

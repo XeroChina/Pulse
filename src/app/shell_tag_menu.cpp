@@ -1,4 +1,5 @@
 #include "../common/app_runtime_paths.h"
+#include "../common/portable_paths.h"
 // shell_tag_menu.cpp - File Explorer "Pulse tags >" submenu (see header).
 #include "shell_tag_menu.h"
 #include "shell_tag_registry.h"
@@ -53,6 +54,8 @@ std::wstring ModulePath() {
 }
 
 std::wstring IconDirectory() {
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+        return portable + L"\\tagicons";
     PWSTR base = nullptr;
     std::wstring dir;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &base)) && base)

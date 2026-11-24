@@ -1,5 +1,6 @@
 // thumbnail_disk_cache.cpp - see thumbnail_disk_cache.h.
 #include "thumbnail_disk_cache.h"
+#include "../common/portable_paths.h"
 #include <algorithm>
 #include <cstring>
 #include <cwchar>
@@ -265,6 +266,10 @@ const std::wstring& ThumbnailDiskCache::Root() {
         const DWORD forced = GetEnvironmentVariableW(L"PULSE_TEST_THUMB_CACHE", value, MAX_PATH);
         if (forced > 0 && forced < MAX_PATH) {
             if (_wcsicmp(value, L"off") != 0) root_ = value;
+            return;
+        }
+        if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+            root_ = portable + L"\\thumbs";
             return;
         }
         const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", value, MAX_PATH);

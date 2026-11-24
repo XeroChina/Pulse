@@ -1,5 +1,6 @@
 #include "../common/dialog_auto_registration.h"
 #include "../common/dialog_bundle.h"
+#include "../common/portable_paths.h"
 #include "../common/runtime_log.h"
 #include <windows.h>
 #include <shlobj.h>
@@ -9,10 +10,16 @@
 int wmain(int argc, wchar_t** argv) {
     namespace automatic = pulse::dialog_auto;
     namespace log = pulse::diagnostics::runtime;
-    PWSTR local = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &local))) {
-        log::Initialize(std::wstring(local) + L"\\Pulse", "dialog_auto_control");
-        CoTaskMemFree(local);
+    std::wstring log_root = pulse::portable_paths::PortableDataDir();
+    if (log_root.empty()) {
+        PWSTR local = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &local))) {
+            log_root = std::wstring(local) + L"\\Pulse";
+            CoTaskMemFree(local);
+        }
+    }
+    if (!log_root.empty()) {
+        log::Initialize(log_root, "dialog_auto_control");
     }
     DWORD error = ERROR_INVALID_PARAMETER;
     if (argc == 2 && std::wstring_view(argv[1]) == L"--disable") {

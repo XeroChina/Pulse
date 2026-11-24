@@ -1,0 +1,65 @@
+name: Build Portable Pulse
+
+on:
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pulse-portable-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-portable:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Configure and build Pulse portable binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = (Get-Location).Path
+          $build = Join-Path $repo 'build-portable'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'Visual Studio 2022 C++ tools are required' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $sdkRoot = & (Join-Path $repo 'scripts/verify_lumatext_sdk.ps1')
+          New-Item -ItemType Directory -Path $build -Force | Out-Null
+          $batch = Join-Path $build 'compile-portable.bat'
+          @"
+          @echo off
+          call "$vcvars"
+          if errorlevel 1 exit /b 1
+          chcp 65001 >nul
+          set "VSLANG=1033"
+          cmake -S "$repo" -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DPULSE_WITH_SELFTEST=OFF -DPULSE_WITH_TEST_HOOKS=OFF -DPULSE_BUILD_PROGRESS_UI_TESTS=OFF -DPULSE_WITH_LUMATEXT=ON -DLUMATEXT_SOURCE_DIR= -DCMAKE_PREFIX_PATH="$sdkRoot" -DPULSE_UPDATE_MANIFEST_URL="" -DPULSE_UPDATE_PUBLIC_KEY_HEX=""
+          if errorlevel 1 exit /b 1
+          cmake --build "$build" --parallel 4 --target pulse pulse_launcher pulse_dialog_auto pulse_dialog_auto_control pulse_dialog_launcher pulse_file_dialog_ui_proof_runtime pulse_picker_ui_proof
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $batch -Encoding ascii
+          & $batch
+          if ($LASTEXITCODE -ne 0) { throw 'Portable compilation failed' }
+
+          $licenses = Join-Path $build 'licenses/LumaText'
+          New-Item -ItemType Directory -Path $licenses -Force | Out-Null
+          Copy-Item -Path (Join-Path $sdkRoot 'share/LumaText/licenses/*') -Destination $licenses -Force
+
+          $version = (Get-Content (Join-Path $repo 'version.txt') -Raw).Trim()
+          & python (Join-Path $repo 'tools/pack_portable/pack_portable.py') --root $repo --build $build --version $version --out (Join-Path $repo "dist/Pulse-Portable-$version-x64.zip")
+          if ($LASTEXITCODE -ne 0) { throw 'Portable packaging failed' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pulse-Portable-x64
+          path: dist/Pulse-Portable-*-x64.zip
+          if-no-files-found: error

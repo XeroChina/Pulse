@@ -16,12 +16,28 @@ struct Paths {
         const std::filesystem::path image(executable), directory = image.parent_path();
         runtime = root = directory.wstring(); entry = executable;
         if (_wcsicmp(image.filename().c_str(), L"pulse.exe") != 0) return;
+        // Support direct <Root>\Program\pulse.exe layout paired with root <Root>\pulse.exe launcher.
+        if (_wcsicmp(directory.filename().c_str(), L"Program") == 0) {
+            const auto launcher = directory.parent_path() / L"pulse.exe";
+            const DWORD attrs = GetFileAttributesW(launcher.c_str());
+            if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))) {
+                entry = launcher.wstring();
+                return;
+            }
+        }
         const auto hash = directory.filename().wstring();
         if (hash.size() != 64 || !std::all_of(hash.begin(), hash.end(), [](wchar_t c) {
             return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f');
         }) || directory.parent_path().filename() != L"DialogBridge") return;
-        const auto installed = directory.parent_path().parent_path();
-        const auto stable = installed / L"pulse.exe";
+        const auto bridge_root = directory.parent_path().parent_path();
+        std::filesystem::path stable = bridge_root / L"pulse.exe";
+        if (_wcsicmp(bridge_root.filename().c_str(), L"Program") == 0) {
+            const auto outer_stable = bridge_root.parent_path() / L"pulse.exe";
+            const DWORD outer_attrs = GetFileAttributesW(outer_stable.c_str());
+            if (outer_attrs != INVALID_FILE_ATTRIBUTES && !(outer_attrs & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))) {
+                stable = outer_stable;
+            }
+        }
         // Identity belongs to this verified version, independently of an
         // upgrade replacing (or temporarily removing) the current pointer.
         const DWORD attributes = GetFileAttributesW(stable.c_str());
@@ -30,7 +46,7 @@ struct Paths {
         digest.reserve(hash.size());
         for (wchar_t c : hash) digest.push_back(static_cast<char>(c));
         if (dialog_bundle::VerifyBundle(directory.wstring(), digest, lease) != ERROR_SUCCESS) return;
-        root = installed.wstring(); entry = stable.wstring();
+        root = bridge_root.wstring(); entry = stable.wstring();
     }
 };
 const Paths& Get() { static const Paths paths; return paths; }

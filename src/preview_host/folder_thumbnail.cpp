@@ -1,4 +1,5 @@
 #include "folder_thumbnail.h"
+#include "../common/portable_paths.h"
 #include "shell_bitmap.h"
 #include "shared_image_file.h"
 #include "../fs/cloud_state.h"
@@ -186,6 +187,8 @@ bool ReadPicture(IWICImagingFactory* factory, const std::wstring& path, UINT cap
     return Pixels(factory, frame.Get(), cap, out);
 }
 fs::path CacheDirectory() {
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty())
+        return fs::path(portable) / L"FolderThumbnails";
     wchar_t root[32768];
     const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", root, static_cast<DWORD>(std::size(root)));
     if (!count || count >= std::size(root)) return {};

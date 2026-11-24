@@ -4,6 +4,7 @@
 #include "content_config_storage.h"
 #include "content_task_search.h"
 #include "content_index.h"
+#include "../common/portable_paths.h"
 #include "search_trace.h"
 #include "index_feed.h"
 #include "content_scope.h"
@@ -77,6 +78,9 @@ private:
     bool stopping_ = false;
 };
 bool InternalContentPath(const std::wstring& path) {
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+        if (ContentPathUnder(ContentScopeKey(path), ContentScopeKey(portable))) return true;
+    }
     std::wstring profile(256, L'\0');
     DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", profile.data(), static_cast<DWORD>(profile.size()));
     if (n >= profile.size()) {

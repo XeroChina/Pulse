@@ -1,4 +1,5 @@
 #include "archive_plugin_migration.h"
+#include "../common/portable_paths.h"
 #include <windows.h>
 #include <string>
 #include <thread>
@@ -37,11 +38,15 @@ void StartArchivePluginMigrationNotice(HWND window) {
 }
 
 bool TakeArchivePluginMigrationNotice() {
-    wchar_t local_app_data[32768];
-    const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data, 32768);
-    if (!count || count >= 32768) return false;
-
-    const std::wstring directory = std::wstring(local_app_data, count) + L"\\Pulse\\packs\\archive\\";
+    std::wstring directory;
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+        directory = portable + L"\\packs\\archive\\";
+    } else {
+        wchar_t local_app_data[32768];
+        const DWORD count = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data, 32768);
+        if (!count || count >= 32768) return false;
+        directory = std::wstring(local_app_data, count) + L"\\Pulse\\packs\\archive\\";
+    }
     const DWORD attributes = GetFileAttributesW((directory + L"installed.json").c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
 
