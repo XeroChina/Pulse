@@ -34,9 +34,11 @@ struct IndexConfig {
     uint32_t version = 1;
     uint64_t generation = 1;
     bool include_fixed_ntfs = true;
-    bool include_removable_ntfs = true;
+    bool include_system_ntfs = false;
+    bool include_removable_ntfs = false;
     std::wstring index_path;
     std::unordered_set<std::wstring> excluded_volume_ids;
+    std::unordered_set<std::wstring> included_volume_ids;
     std::vector<std::wstring> excluded_paths;
     // Built-in system folder groups (kSystemExclusionGroups). Configs written
     // before this setting existed leave system_groups_saved false.
@@ -48,6 +50,7 @@ struct IndexConfig {
     bool search_enabled = true;
 
     bool IsExcluded(const std::wstring& id) const;
+    bool IsIncluded(const std::wstring& id) const;
     bool IsPathExcluded(std::wstring_view path) const;
 };
 

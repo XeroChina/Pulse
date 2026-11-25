@@ -1,11 +1,14 @@
 // index_client.cpp — Connect to Pulse.Index (service or spawned helper).
 #include "../common/command_line.h"
+#include "../common/portable_paths.h"
 #include "index_client.h"
 #include "index_config.h"
 #include "index_executable.h"
 #include "search_trace.h"
 #include <chrono>
 #include <algorithm>
+#include <cstdio>
+#include <cwctype>
 #include <shellapi.h>
 #include <winsvc.h>
 
@@ -16,6 +19,43 @@ namespace {
 bool IsFile(const std::wstring& path) {
     const DWORD attributes = GetFileAttributesW(path.c_str());
     return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+constexpr wchar_t kPortablePipePrefix[] = L"\\\\.\\pipe\\PulseIndex.Portable.";
+
+std::wstring PortablePipeToken() {
+    const std::wstring data = pulse::portable_paths::PortableDataDir();
+    if (data.empty()) return {};
+    uint64_t hash = 14695981039346656037ull;
+    for (wchar_t ch : data) {
+        hash ^= static_cast<uint16_t>(towlower(ch));
+        hash *= 1099511628211ull;
+    }
+    wchar_t hex[17]{};
+    swprintf_s(hex, L"%016llx", static_cast<unsigned long long>(hash));
+    return hex;
+}
+
+bool PortableServiceBelongsHere() {
+    const std::wstring root = pulse::portable_paths::DetectPortableRoot();
+    if (root.empty()) return true;
+    const std::wstring command = InstalledServiceCommand(kServiceName);
+    if (command.empty()) return false;
+    std::wstring exe = command;
+    size_t start = 0;
+    while (start < exe.size() && iswspace(exe[start])) ++start;
+    if (start < exe.size() && exe[start] == L'"') {
+        const size_t end = exe.find(L'"', start + 1);
+        exe = end == std::wstring::npos ? exe.substr(start + 1) : exe.substr(start + 1, end - start - 1);
+    } else {
+        const size_t end = exe.find_first_of(L" \t", start);
+        exe = end == std::wstring::npos ? exe.substr(start) : exe.substr(start, end - start);
+    }
+    std::wstring prefix = root;
+    if (!prefix.empty() && prefix.back() != L'\\') prefix.push_back(L'\\');
+    return exe.size() > prefix.size() &&
+        CompareStringOrdinal(exe.c_str(), static_cast<int>(prefix.size()),
+                             prefix.c_str(), static_cast<int>(prefix.size()), TRUE) == CSTR_EQUAL;
 }
 
 // Index location changes (Pulse.Index.exe --set-index-path, elevated) stop the
@@ -43,6 +83,10 @@ std::wstring IndexClient::ExePath() {
 
 void IndexClient::Start(HWND notify, UINT status_msg, UINT search_msg, std::wstring pipe_name) {
     Stop();
+    if (pipe_name == kPipeName && pulse::portable_paths::IsPortableMode() && !ServiceInstalled()) {
+        const std::wstring token = PortablePipeToken();
+        if (!token.empty()) pipe_name = std::wstring(kPortablePipePrefix) + token;
+    }
     pipe_name_ = std::move(pipe_name);
     notify_ = notify;
     status_msg_ = status_msg;
@@ -201,8 +245,9 @@ void IndexClient::PurgeIndexFolder(const std::wstring& root) {
 }
 
 bool IndexClient::SpawnHelper() {
-    if (pipe_name_ != kPipeName) return false;
-    if (ServiceInstalled()) {
+    const bool portable_pipe = pipe_name_.rfind(kPortablePipePrefix, 0) == 0;
+    if (pipe_name_ != kPipeName && !portable_pipe) return false;
+    if (!portable_pipe && ServiceInstalled()) {
         StartStoppedService();
         {
             std::lock_guard<std::mutex> lock(mu_);
@@ -217,7 +262,9 @@ bool IndexClient::SpawnHelper() {
         status_ = L"找不到 Pulse.Index.exe";
         return false;
     }
-    std::wstring cmd = L"\"" + exe + L"\" " + std::to_wstring(GetCurrentProcessId());
+    std::wstring cmd = portable_pipe
+        ? L"\"" + exe + L"\" --portable-host " + pipe_name_.substr(wcslen(kPortablePipePrefix))
+        : L"\"" + exe + L"\" " + std::to_wstring(GetCurrentProcessId());
     STARTUPINFOW si{ sizeof(si) };
     si.dwFlags = STARTF_FORCEOFFFEEDBACK; // background helper: no AppStarting cursor
     PROCESS_INFORMATION pi{};
@@ -621,7 +668,9 @@ bool IndexClient::ServiceInstalled() const {
     const bool ok = svc != nullptr;
     if (svc) CloseServiceHandle(svc);
     CloseServiceHandle(scm);
-    return ok;
+    if (!ok) return false;
+    if (pulse::portable_paths::IsPortableMode()) return PortableServiceBelongsHere();
+    return true;
 }
 
 bool IndexClient::RequestInstallService() {

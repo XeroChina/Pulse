@@ -16,6 +16,7 @@
 #include "index_config.h"
 #include "../common/crash_reporter.h"
 #include "../common/diagnostics_exporter.h"
+#include "../common/portable_paths.h"
 #include "../common/runtime_log.h"
 #include "index_paths.h"
 #include "index_path_service.h"
@@ -1450,6 +1451,7 @@ int UninstallService() {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+    pulse::portable_paths::ExportPortableEnvironment();
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     std::vector<std::wstring> args;
@@ -1493,6 +1495,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     // Content search moved to Pulse.Content.exe (the content enhancement
     // pack). Refuse its roles here rather than starting a helper host.
     if (a1.rfind(L"--content-", 0) == 0) return ERROR_NOT_SUPPORTED;
+    if (a1 == L"--portable-host" && args.size() >= 3) {
+        const std::wstring& token = args[2];
+        const bool valid = !token.empty() && token.size() <= 64 &&
+            std::all_of(token.begin(), token.end(), [](wchar_t c) {
+                return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'z') ||
+                       (c >= L'A' && c <= L'Z') || c == L'-' || c == L'_';
+            });
+        if (!valid) return ERROR_INVALID_PARAMETER;
+        return RunHost(false, false,
+            L"\\\\.\\pipe\\PulseIndex.Portable." + token,
+            L"Local\\Pulse.Index.Portable." + token);
+    }
     if (a1 == L"--test-host" && args.size() >= 3) {
         const std::wstring& token = args[2];
         const bool valid = !token.empty() && token.size() <= 64 &&

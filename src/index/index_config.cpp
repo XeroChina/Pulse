@@ -13,6 +13,7 @@
 #include <shlobj.h>
 #include <sstream>
 #include <windows.h>
+#include <winioctl.h>
 
 namespace pulse::index {
 namespace {
@@ -130,6 +131,9 @@ std::wstring ConfigJson(const IndexConfig& config) {
     std::vector<std::wstring> excluded(config.excluded_volume_ids.begin(),
                                        config.excluded_volume_ids.end());
     std::sort(excluded.begin(), excluded.end());
+    std::vector<std::wstring> included(config.included_volume_ids.begin(),
+                                       config.included_volume_ids.end());
+    std::sort(included.begin(), included.end());
     std::vector<std::wstring> excluded_paths = config.excluded_paths;
     std::sort(excluded_paths.begin(), excluded_paths.end(), [](const auto& a, const auto& b) {
         return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_LESS_THAN;
@@ -139,6 +143,8 @@ std::wstring ConfigJson(const IndexConfig& config) {
                        L",\n  \"search_enabled\":" + (config.search_enabled ? L"true" : L"false") +
                        L",\n  \"include_fixed_ntfs\":" +
                        (config.include_fixed_ntfs ? L"true" : L"false") +
+                       L",\n  \"include_system_ntfs\":" +
+                       (config.include_system_ntfs ? L"true" : L"false") +
                        L",\n  \"include_removable_ntfs\":" +
                        (config.include_removable_ntfs ? L"true" : L"false") +
                        L",\n  \"index_path\":\"" + escaped_path +
@@ -150,6 +156,14 @@ std::wstring ConfigJson(const IndexConfig& config) {
         out += L"\n    \"" + escaped + L"\"";
     }
     if (!excluded.empty()) out += L"\n  ";
+    out += L"],\n  \"included_volume_ids\":[";
+    for (size_t i = 0; i < included.size(); ++i) {
+        std::wstring escaped;
+        pulse::json::Escape(included[i], escaped);
+        if (i) out += L",";
+        out += L"\n    \"" + escaped + L"\"";
+    }
+    if (!included.empty()) out += L"\n  ";
     out += L"],\n  \"excluded_paths\":[";
     for (size_t i = 0; i < excluded_paths.size(); ++i) {
         std::wstring escaped;
@@ -200,10 +214,53 @@ bool IsNtfs(const std::wstring& fs) {
     return CompareStringOrdinal(fs.c_str(), -1, L"NTFS", -1, TRUE) == CSTR_EQUAL;
 }
 
+bool IsSystemDrive(const wchar_t* mount_point) {
+    if (!mount_point || !mount_point[0] || mount_point[1] != L':') return false;
+    wchar_t windows[MAX_PATH]{};
+    const UINT n = GetSystemWindowsDirectoryW(windows, ARRAYSIZE(windows));
+    if (!n || n >= ARRAYSIZE(windows) || windows[1] != L':') return false;
+    return towupper(mount_point[0]) == towupper(windows[0]);
+}
+
+bool IsExternalStorageDrive(const wchar_t* mount_point) {
+    if (!mount_point || !mount_point[0] || mount_point[1] != L':') return false;
+    wchar_t device_path[] = L"\\\\.\\X:";
+    device_path[4] = mount_point[0];
+    HANDLE device = CreateFileW(device_path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                nullptr, OPEN_EXISTING, 0, nullptr);
+    if (device == INVALID_HANDLE_VALUE) return false;
+    STORAGE_PROPERTY_QUERY query{};
+    query.PropertyId = StorageDeviceProperty;
+    query.QueryType = PropertyStandardQuery;
+    BYTE buffer[1024]{};
+    DWORD returned = 0;
+    const BOOL ok = DeviceIoControl(device, IOCTL_STORAGE_QUERY_PROPERTY,
+                                    &query, sizeof(query), buffer, sizeof(buffer), &returned, nullptr);
+    CloseHandle(device);
+    if (!ok || returned < sizeof(STORAGE_DEVICE_DESCRIPTOR)) return false;
+    const auto* desc = reinterpret_cast<const STORAGE_DEVICE_DESCRIPTOR*>(buffer);
+    if (desc->RemovableMedia) return true;
+    switch (desc->BusType) {
+    case BusTypeUsb:
+    case BusType1394:
+    case BusTypeSd:
+    case BusTypeMmc:
+    case BusTypeUfs:
+    case BusTypeFileBackedVirtual:
+        return true;
+    default:
+        return false;
+    }
+}
+
 } // namespace
 
 bool IndexConfig::IsExcluded(const std::wstring& id) const {
     return excluded_volume_ids.contains(NormalizeVolumeId(id));
+}
+
+bool IndexConfig::IsIncluded(const std::wstring& id) const {
+    return included_volume_ids.contains(NormalizeVolumeId(id));
 }
 
 bool IndexConfig::IsPathExcluded(std::wstring_view path) const {
@@ -269,6 +326,10 @@ std::wstring NormalizeVolumeId(std::wstring id) {
 }
 
 std::wstring MachineDataRoot() {
+    if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
+        if (!EnsureDirectory(portable)) return {};
+        return portable;
+    }
     std::wstring root = KnownFolder(CSIDL_COMMON_APPDATA);
     if (root.empty()) return {};
     const std::wstring pulse = root + L"\\Pulse";
@@ -280,18 +341,26 @@ std::wstring MachineIndexRoot() {
     const std::wstring pulse = MachineDataRoot();
     if (pulse.empty()) return {};
     const std::wstring index = pulse + L"\\Index";
+    if (pulse::portable_paths::IsPortableMode()) {
+        if (!EnsureDirectory(index)) return {};
+        return index;
+    }
     if (!EnsureMachineDirectory(index, false)) return {};
     return index;
 }
 
 bool ProtectIndexDirectory(const std::wstring& path) {
+    if (pulse::portable_paths::IsPortableMode()) {
+        return EnsureDirectory(path);
+    }
     return PreparePrivateIndexDirectory(std::filesystem::path(path));
 }
 
 std::wstring UserIndexRoot() {
     if (const auto portable = pulse::portable_paths::PortableDataDir(); !portable.empty()) {
-        if (!EnsureDirectory(portable)) return {};
-        return portable;
+        const std::wstring index = portable + L"\\Index";
+        if (!EnsureDirectory(index)) return {};
+        return index;
     }
     std::wstring root = KnownFolder(CSIDL_LOCAL_APPDATA);
     if (root.empty()) return {};
@@ -331,11 +400,14 @@ bool LoadIndexConfigFrom(const std::wstring& path, const std::wstring& default_i
     loaded.generation = static_cast<uint64_t>((std::max)(1, pulse::json::ExtractInt(json, L"generation", 1)));
     loaded.search_enabled = pulse::json::ExtractBool(json, L"search_enabled", true);
     loaded.include_fixed_ntfs = pulse::json::ExtractBool(json, L"include_fixed_ntfs", true);
-    loaded.include_removable_ntfs = pulse::json::ExtractBool(json, L"include_removable_ntfs", true);
+    loaded.include_system_ntfs = pulse::json::ExtractBool(json, L"include_system_ntfs", false);
+    loaded.include_removable_ntfs = pulse::json::ExtractBool(json, L"include_removable_ntfs", false);
     loaded.index_path = pulse::json::ExtractString(json, L"index_path", default_index_path);
     if (loaded.index_path.empty()) loaded.index_path = default_index_path;
     for (auto& id : pulse::json::ExtractStringArray(json, L"excluded_volume_ids"))
         loaded.excluded_volume_ids.insert(NormalizeVolumeId(std::move(id)));
+    for (auto& id : pulse::json::ExtractStringArray(json, L"included_volume_ids"))
+        loaded.included_volume_ids.insert(NormalizeVolumeId(std::move(id)));
     for (auto& path_value : pulse::json::ExtractStringArray(json, L"excluded_paths")) {
         std::replace(path_value.begin(), path_value.end(), L'/', L'\\');
         while (path_value.size() > 3 && path_value.back() == L'\\') path_value.pop_back();
@@ -425,8 +497,13 @@ bool ConfigureVolume(const std::wstring& id, bool enabled, std::wstring* error) 
     }
     IndexConfig config;
     if (!LoadMachineConfig(config, error)) return false;
-    if (enabled) config.excluded_volume_ids.erase(normalized);
-    else config.excluded_volume_ids.insert(normalized);
+    if (enabled) {
+        config.excluded_volume_ids.erase(normalized);
+        config.included_volume_ids.insert(normalized);
+    } else {
+        config.included_volume_ids.erase(normalized);
+        config.excluded_volume_ids.insert(normalized);
+    }
     ++config.generation;
     return SaveMachineConfig(config, error);
 }
@@ -507,7 +584,8 @@ std::vector<VolumeInfo> EnumerateLocalVolumes(const IndexConfig& config) {
         if (::pulse::fs::IsRemoteLikeDrive(p)) continue;
         VolumeInfo info;
         info.mount_point = p;
-        info.kind = type == DRIVE_FIXED ? VolumeKind::Fixed : VolumeKind::Removable;
+        const bool external_or_removable = type == DRIVE_REMOVABLE || IsExternalStorageDrive(p);
+        info.kind = external_or_removable ? VolumeKind::Removable : VolumeKind::Fixed;
         wchar_t volume_name[MAX_PATH]{};
         if (GetVolumeNameForVolumeMountPointW(p, volume_name, ARRAYSIZE(volume_name)))
             info.id = NormalizeVolumeId(volume_name);
@@ -524,9 +602,12 @@ std::vector<VolumeInfo> EnumerateLocalVolumes(const IndexConfig& config) {
         }
         if (info.online && ::pulse::fs::IsRemoteLikeFileSystemName(info.file_system)) continue;
         info.supported = info.online && IsNtfs(info.file_system);
-        const bool auto_include = info.kind == VolumeKind::Fixed
-            ? config.include_fixed_ntfs : config.include_removable_ntfs;
-        info.enabled = info.supported && auto_include && !config.IsExcluded(info.id);
+        const bool is_system = IsSystemDrive(p);
+        const bool auto_include = external_or_removable ? config.include_removable_ntfs
+            : is_system ? config.include_system_ntfs
+            : config.include_fixed_ntfs;
+        info.enabled = info.supported && !config.IsExcluded(info.id) &&
+            (auto_include || config.IsIncluded(info.id));
         info.state = !info.online ? L"离线" : !info.supported ? L"非 NTFS" :
                      info.enabled ? L"等待索引" : L"已排除";
         out.push_back(std::move(info));
