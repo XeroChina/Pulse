@@ -50,6 +50,7 @@ inline constexpr UINT kHostRoutedMessages[] = {
     WM_TAG_ADS_WARNING,        // tag ADS write failures
     WM_TAG_ADS_DISCOVERED,     // tag ADS discovery
     WM_SETTINGS_TASK_RESULT,   // settings background tasks
+    WM_STARTUP_INDEX_SERVICE_DONE, // startup auto-install index service result
     WM_NET_PROBE,              // UNC probe scheduler (shared queue)
     WM_DRIVE_EJECT_READY,
     WM_DRIVE_VERB,

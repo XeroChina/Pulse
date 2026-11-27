@@ -103,6 +103,7 @@ constexpr UINT WM_SOURCE_PROBE_DONE = WM_APP + 127;  // a 测速 probe finished 
 
 constexpr UINT WM_WINDOW_ARRANGE_UNDO = WM_APP + 128;
 constexpr UINT WM_DIALOG_MANAGEMENT_RESULT = WM_APP + 131;
+constexpr UINT WM_STARTUP_INDEX_SERVICE_DONE = WM_APP + 145;
 
 }  // namespace pulse
 

@@ -10,6 +10,7 @@ void ToggleGlobalSearch(AppState& s, bool double_ctrl = false);
 // delete the index), saves the preference and applies it.
 void ToggleSearchSwitch(AppState& s);
 void ApplySearchSwitch(AppState& s, bool purge_index);
+void RequestAutoInstallIndexService(AppState& s);
 void ShutdownGlobalSearch(AppState& s);
 // Answers the Open / Save dialog jump bar: the folders open in Pulse and around.
 void SendDialogJumpContext(AppState& s);

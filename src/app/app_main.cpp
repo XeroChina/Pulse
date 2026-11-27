@@ -1449,12 +1449,17 @@ static void StartSearchServices(AppState& s) {
     if (s.isolatedTest || s.shot.active) return;
     const HWND service_window = ServiceWindow(s);
     // Search off: no index client, so nothing starts the service or a helper.
-    if (s.appPrefs.search_enabled) s.index.Start(service_window, WM_INDEX_NOTIFY, WM_INDEX_SEARCH);
-    StartChangeTracking(s);
     if (s.appPrefs.search_enabled) {
-        s.networkIndex.Start(service_window, WM_NETWORK_INDEX_NOTIFY, WM_NETWORK_INDEX_SEARCH);
-        s.contentSearch.Start(service_window, WM_CONTENT_SEARCH, s.contentIndexObserver ? index::ContentAgentMode::Observer : index::ContentAgentMode::Instant);
+        if (!s.safeMode && !s.menushot && !s.index.ServiceInstalled()) {
+            RequestAutoInstallIndexService(s);
+        } else {
+            s.index.Start(service_window, WM_INDEX_NOTIFY, WM_INDEX_SEARCH);
+            s.networkIndex.Start(service_window, WM_NETWORK_INDEX_NOTIFY, WM_NETWORK_INDEX_SEARCH);
+            s.contentSearch.Start(service_window, WM_CONTENT_SEARCH,
+                s.contentIndexObserver ? index::ContentAgentMode::Observer : index::ContentAgentMode::Instant);
+        }
     }
+    StartChangeTracking(s);
     s.duplicateSearch.Start(service_window, WM_DUPLICATE_SCAN, false);
 }
 
@@ -3596,6 +3601,29 @@ LRESULT CALLBACK WndProcImpl(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         delete result;
+        return 0;
+    }
+
+    case WM_STARTUP_INDEX_SERVICE_DONE: {
+        if (!s) return 0;
+        const bool ok = wParam != 0;
+        const bool installed = s->index.ServiceInstalled();
+        s->settings.SetServiceInstalled(installed);
+        if (ok && installed) {
+            if (s->appPrefs.search_enabled && !s->isolatedTest && !s->shot.active) {
+                const HWND service_window = ServiceWindow(*s);
+                s->index.Start(service_window, WM_INDEX_NOTIFY, WM_INDEX_SEARCH);
+                s->networkIndex.Start(service_window, WM_NETWORK_INDEX_NOTIFY, WM_NETWORK_INDEX_SEARCH);
+                s->contentSearch.Start(service_window, WM_CONTENT_SEARCH,
+                    s->contentIndexObserver ? index::ContentAgentMode::Observer : index::ContentAgentMode::Instant);
+                s->folderSizes.SetIndexEnabled(true);
+            }
+        } else if (s->appPrefs.search_enabled) {
+            s->appPrefs.search_enabled = false;
+            if (!s->isolatedTest) s->appPrefs.Save();
+            ApplySearchSwitch(*s, false);
+        }
+        InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     }
 

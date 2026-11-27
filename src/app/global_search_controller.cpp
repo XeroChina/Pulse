@@ -18,6 +18,7 @@
 #include "../index/index_config.h"
 #include "../ui/ui_renderer.h"
 #include <algorithm>
+#include <atomic>
 #include <thread>
 
 namespace pulse {
@@ -245,6 +246,23 @@ void ApplyGlobalSearchSettings(AppState& s) {
     InvalidateRect(s.hwnd, nullptr, FALSE);
 }
 
+void RequestAutoInstallIndexService(AppState& s) {
+    static std::atomic<bool> running{false};
+    if (s.isolatedTest || s.shot.active || s.menushot || s.safeMode || !s.appPrefs.search_enabled) return;
+    if (s.index.ServiceInstalled()) return;
+    if (running.exchange(true)) return;
+    const HWND service_window = ServiceWindow(s);
+    std::thread([service_window] {
+        DWORD code = 0;
+        const bool ok = index::IndexClient::InstallServiceElevated(&code);
+        running.store(false);
+        if (IsWindow(service_window)) {
+            PostMessageW(service_window, WM_STARTUP_INDEX_SERVICE_DONE,
+                         ok ? 1u : 0u, static_cast<LPARAM>(code));
+        }
+    }).detach();
+}
+
 void ApplySearchSwitch(AppState& s, bool purge_index) {
     const bool on = s.appPrefs.search_enabled;
     s.renderer.SetSearchHidden(!on);
@@ -257,12 +275,16 @@ void ApplySearchSwitch(AppState& s, bool purge_index) {
         s.networkIndex.Stop();
         s.folderSizes.SetIndexEnabled(false);
     } else if (!s.isolatedTest && !s.shot.active) {
-        const HWND service_window = ServiceWindow(s);
-        s.index.Start(service_window, WM_INDEX_NOTIFY, WM_INDEX_SEARCH);
-        s.networkIndex.Start(service_window, WM_NETWORK_INDEX_NOTIFY, WM_NETWORK_INDEX_SEARCH);
-        s.contentSearch.Start(service_window, WM_CONTENT_SEARCH,
-            s.contentIndexObserver ? index::ContentAgentMode::Observer : index::ContentAgentMode::Instant);
-        s.folderSizes.SetIndexEnabled(true);
+        if (!s.safeMode && !s.menushot && !s.index.ServiceInstalled()) {
+            RequestAutoInstallIndexService(s);
+        } else {
+            const HWND service_window = ServiceWindow(s);
+            s.index.Start(service_window, WM_INDEX_NOTIFY, WM_INDEX_SEARCH);
+            s.networkIndex.Start(service_window, WM_NETWORK_INDEX_NOTIFY, WM_NETWORK_INDEX_SEARCH);
+            s.contentSearch.Start(service_window, WM_CONTENT_SEARCH,
+                s.contentIndexObserver ? index::ContentAgentMode::Observer : index::ContentAgentMode::Instant);
+            s.folderSizes.SetIndexEnabled(true);
+        }
     }
     if (!s.isolatedTest && !s.shot.active) {
         const bool installed = s.index.ServiceInstalled();
