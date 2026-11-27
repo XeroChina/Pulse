@@ -36,10 +36,27 @@ std::wstring PortablePipeToken() {
     return hex;
 }
 
+std::wstring ReadServiceImagePathFromRegistry(const wchar_t* service_name) {
+    if (!service_name || !*service_name) return {};
+    const std::wstring subkey = std::wstring(L"SYSTEM\\CurrentControlSet\\Services\\") + service_name;
+    DWORD bytes = 0;
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, subkey.c_str(), L"ImagePath",
+                     RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr, nullptr, &bytes) != ERROR_SUCCESS ||
+        bytes < sizeof(wchar_t) || bytes > 65536)
+        return {};
+    std::wstring value(bytes / sizeof(wchar_t), L'\0');
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, subkey.c_str(), L"ImagePath",
+                     RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr, value.data(), &bytes) != ERROR_SUCCESS)
+        return {};
+    while (!value.empty() && value.back() == L'\0') value.pop_back();
+    return value;
+}
+
 bool PortableServiceBelongsHere() {
-    const std::wstring root = pulse::portable_paths::DetectPortableRoot();
+    std::wstring root = pulse::portable_paths::DetectPortableRoot();
     if (root.empty()) return true;
-    const std::wstring command = InstalledServiceCommand(kServiceName);
+    std::wstring command = InstalledServiceCommand(kServiceName);
+    if (command.empty()) command = ReadServiceImagePathFromRegistry(kServiceName);
     if (command.empty()) return false;
     std::wstring exe = command;
     size_t start = 0;
@@ -51,6 +68,10 @@ bool PortableServiceBelongsHere() {
         const size_t end = exe.find_first_of(L" \t", start);
         exe = end == std::wstring::npos ? exe.substr(start) : exe.substr(start, end - start);
     }
+    if (exe.size() > 4 && exe.rfind(L"\\\\?\\", 0) == 0) exe.erase(0, 4);
+    if (root.size() > 4 && root.rfind(L"\\\\?\\", 0) == 0) root.erase(0, 4);
+    std::replace(exe.begin(), exe.end(), L'/', L'\\');
+    std::replace(root.begin(), root.end(), L'/', L'\\');
     std::wstring prefix = root;
     if (!prefix.empty() && prefix.back() != L'\\') prefix.push_back(L'\\');
     return exe.size() > prefix.size() &&
@@ -637,6 +658,10 @@ bool IndexClient::SystemExclusion(bool& enabled, std::vector<std::wstring>& grou
 }
 
 void IndexClient::RefreshVolumesAsync() {
+    if (pipe_name_.rfind(kPortablePipePrefix, 0) == 0 && ServiceInstalled()) {
+        Start(notify_, status_msg_, search_msg_, kPipeName);
+        return;
+    }
     {
         std::lock_guard<std::mutex> lock(mu_);
         volume_refresh_requested_ = true;
